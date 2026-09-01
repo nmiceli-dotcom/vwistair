@@ -4,10 +4,5 @@
 
 [[redirects]]
   from = "/api/*"
-  to = "/.netlify/functions/:splat"
+  to = "/.netlify/functions/api"
   status = 200
-
-[[headers]]
-  for = "/api/photo/*"
-  [headers.values]
-    Cache-Control = "public, max-age=31536000, immutable"
