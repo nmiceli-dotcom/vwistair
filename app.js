@@ -1,4 +1,4 @@
-// Complete Client-Side App Logic (Fast Entry Autocomplete & Field Retention)
+// Complete Client-Side App Logic (CSV Export & PDF Isolation)
 (function () {
   const STORAGE_KEY_PROPERTIES = 'vw_stair_properties';
   const STORAGE_KEY_RECORDS = 'vw_stair_records';
@@ -45,7 +45,6 @@
     return el ? el.value : '';
   }
 
-  // Retain Building/Inspector/Period and clear ONLY Unit for fast 1-click entries
   function resetUnitInputOnly() {
     const unitInput = findInputElement(['unit', 'stairwell']);
     if (unitInput) {
@@ -54,7 +53,6 @@
     }
   }
 
-  // Dynamic Autocomplete (<datalist>) for Building, Inspector, and Period
   function updateAutocompletes() {
     const uniqueBuildings = [...new Set(records.map(r => r.building).filter(Boolean))];
     const uniqueInspectors = [...new Set(records.map(r => r.inspector).filter(Boolean))];
@@ -138,7 +136,10 @@
     blockFormSubmissions();
 
     const handleCreate = (e) => {
-      if (e) e.preventDefault();
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
 
       const building = getInputValue(['building']) || 'Building 22';
       const unit = getInputValue(['unit', 'stairwell']) || 'Unit 101';
@@ -177,14 +178,116 @@
       return false;
     };
 
-    document.querySelectorAll('form').forEach(f => f.onsubmit = handleCreate);
     document.querySelectorAll('button, input[type="submit"], .btn').forEach(btn => {
-      if (btn.textContent.trim().toLowerCase().includes('create staircase record')) {
+      const txt = btn.textContent.trim().toLowerCase();
+      if (txt.includes('create staircase record')) {
         btn.onclick = handleCreate;
+        const parentForm = btn.closest('form');
+        if (parentForm) {
+          parentForm.onsubmit = handleCreate;
+        }
       }
     });
 
     updateAutocompletes();
+  }
+
+  // Export CSV Handler
+  function exportCSV() {
+    const propRecords = records.filter(r => r.propertyId === currentPropertyId);
+    if (!propRecords.length) {
+      alert('No inspection records found for this property to export.');
+      return;
+    }
+
+    const currentPropObj = properties.find(p => p.id === currentPropertyId);
+    const propName = currentPropObj ? currentPropObj.name : currentPropertyId;
+
+    const headers = [
+      'Property',
+      'Building',
+      'Unit/Stairwell',
+      'Inspection Period',
+      'Inspected On',
+      'Inspector',
+      'Step Number',
+      'Condition Code',
+      'Flagged (Defect)',
+      'Has Photo'
+    ];
+
+    const rows = [headers];
+
+    propRecords.forEach(rec => {
+      rec.treads.forEach(tread => {
+        const isFlagged = ['C', 'HSW'].includes(tread.condition) ? 'YES' : 'NO';
+        const hasPhoto = (tread.photos && tread.photos.length > 0) ? 'YES' : 'NO';
+
+        rows.push([
+          `"${propName.replace(/"/g, '""')}"`,
+          `"${(rec.building || '').replace(/"/g, '""')}"`,
+          `"${(rec.unit || '').replace(/"/g, '""')}"`,
+          `"${(rec.periodLabel || '').replace(/"/g, '""')}"`,
+          `"${rec.inspectedOn || ''}"`,
+          `"${(rec.inspector || '').replace(/"/g, '""')}"`,
+          tread.step,
+          `"${tread.condition}"`,
+          isFlagged,
+          hasPhoto
+        ]);
+      });
+    });
+
+    const csvContent = rows.map(e => e.join(',')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+
+    const sanitizeName = propName.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+    const dateStr = new Date().toISOString().split('T')[0];
+    link.setAttribute('href', url);
+    link.setAttribute('download', `stair_inspection_${sanitizeName}_${dateStr}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  function initReportGenerator() {
+    document.querySelectorAll('button, input[type="submit"], .btn').forEach(btn => {
+      const txt = btn.textContent.trim().toLowerCase();
+      if (txt.includes('generate pdf') || txt.includes('generate report')) {
+        btn.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          window.print();
+          return false;
+        };
+
+        const parentForm = btn.closest('form') || btn.parentElement;
+        if (parentForm) {
+          parentForm.onsubmit = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            window.print();
+            return false;
+          };
+
+          if (!document.getElementById('exportCsvBtn')) {
+            const csvBtn = document.createElement('button');
+            csvBtn.id = 'exportCsvBtn';
+            csvBtn.type = 'button';
+            csvBtn.textContent = '📊 Export CSV Data';
+            csvBtn.style.cssText = 'background:#2e7d32; color:#fff; border:none; padding:10px 16px; border-radius:4px; font-size:13px; font-weight:bold; cursor:pointer; margin-left:10px; margin-top:5px;';
+            csvBtn.onclick = (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              exportCSV();
+            };
+            btn.insertAdjacentElement('afterend', csvBtn);
+          }
+        }
+      }
+    });
   }
 
   function renderStaircaseList() {
@@ -194,7 +297,7 @@
       listContainer = document.createElement('div');
       listContainer.id = 'loggedStaircasesList';
       listContainer.style.cssText = 'margin-top:20px; padding:15px; background:#fff; color:#111; border:1px solid #ddd; border-radius:6px;';
-      
+
       const formBtn = document.querySelectorAll('button, input[type="submit"]')[0];
       if (formBtn && formBtn.parentElement) {
         formBtn.parentElement.appendChild(listContainer);
@@ -245,7 +348,7 @@
 
   function renderRightPanel() {
     let mainPanel = document.querySelector('.main-panel') || document.querySelectorAll('div')[2] || document.body;
-    
+
     const headers = Array.from(document.querySelectorAll('h3, h4, div'));
     const targetHeader = headers.find(el => el.textContent.toLowerCase().includes('no staircase selected') || el.textContent.toLowerCase().includes('step 1'));
     if (targetHeader) {
@@ -469,6 +572,7 @@
   function init() {
     initPropertyDropdown();
     initStaircaseForm();
+    initReportGenerator();
     renderStaircaseList();
     renderRightPanel();
     updateAutocompletes();
