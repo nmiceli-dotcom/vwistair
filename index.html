@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tread Record — stair inspection log</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+<div class="grain" aria-hidden="true"></div>
+
+<header class="topbar">
+  <div class="mark">
+    <svg viewBox="0 0 32 32" aria-hidden="true" class="mark-glyph">
+      <path d="M2 28h6v-6h6v-6h6v-6h6V4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="square"/>
+    </svg>
+    <div>
+      <h1>Tread Record</h1>
+      <p>Stair tread condition log &amp; master report</p>
+    </div>
+  </div>
+  <div class="property-bar">
+    <label for="property">Property</label>
+    <select id="property"></select>
+    <button type="button" id="new-property" class="ghost">Add property</button>
+  </div>
+</header>
+
+<main>
+  <section class="panel span-4" id="staircase-panel">
+    <div class="panel-head">
+      <h2>Staircases</h2>
+      <span class="count" id="staircase-count">—</span>
+    </div>
+
+    <div id="staircase-list" class="staircase-list"></div>
+
+    <details class="new-form" id="new-inspection">
+      <summary>Log a new staircase / cycle</summary>
+      <form id="inspection-form">
+        <div class="field-row">
+          <label>Building<input name="building" required placeholder="Building B" /></label>
+          <label>Unit / stairwell<input name="unit" required placeholder="Unit 204" /></label>
+        </div>
+        <label>Inspection period label
+          <input name="periodLabel" placeholder="Summer 2026 cycle" required />
+        </label>
+        <div class="field-row">
+          <label>Period start<input type="date" name="periodStart" required /></label>
+          <label>Period end<input type="date" name="periodEnd" required /></label>
+        </div>
+        <div class="field-row">
+          <label>Inspected on<input type="date" name="inspectedOn" /></label>
+          <label>Treads<input type="number" name="stepCount" value="17" min="1" max="200" /></label>
+        </div>
+        <label>Inspector<input name="inspector" placeholder="R. Okonkwo" /></label>
+        <label>Stairwell notes<textarea name="notes" rows="2"></textarea></label>
+        <p class="key-preview" id="key-preview"></p>
+        <button type="submit" class="primary">Create staircase record</button>
+      </form>
+    </details>
+  </section>
+
+  <section class="panel span-8" id="tread-panel">
+    <div class="panel-head">
+      <div>
+        <h2 id="tread-title">No staircase selected</h2>
+        <p class="sub" id="tread-sub">Pick a staircase, or log a new one.</p>
+      </div>
+      <div class="flag-tally" id="flag-tally"></div>
+    </div>
+    <p class="keyline" id="key-line"></p>
+    <div id="tread-list" class="tread-list">
+      <div class="empty">
+        <svg viewBox="0 0 48 32" aria-hidden="true"><path d="M2 30h8v-7h8v-7h8v-7h8v-7h10" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+        <p>Every tread is recorded, not just the damaged ones. Photos attach to the treads you flag.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel span-12" id="report-panel">
+    <div class="panel-head">
+      <h2>Master report</h2>
+      <span class="count">one PDF per property</span>
+    </div>
+    <form id="report-form" class="report-form">
+      <label>Report title<input name="title" placeholder="Stair tread condition survey" /></label>
+      <label>Period label<input name="periodLabel" placeholder="Summer 2026 cycle" /></label>
+      <label>From<input type="date" name="from" /></label>
+      <label>To<input type="date" name="to" /></label>
+      <label>Requested by<input name="requestedBy" placeholder="M. Halvorsen" /></label>
+      <button type="submit" class="primary">Generate PDF</button>
+    </form>
+    <p class="hint">Leave the dates empty to cover every recorded inspection. Any date range works — cycles do not have to line up with calendar quarters.</p>
+    <div id="report-list" class="report-list"></div>
+  </section>
+</main>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script src="/app.js" type="module"></script>
+</body>
+</html>
