@@ -1,4 +1,4 @@
-// Complete Client-Side App Logic (Camera Button on Every Step)
+// Complete Client-Side App Logic (Fast Entry Autocomplete & Field Retention)
 (function () {
   const STORAGE_KEY_PROPERTIES = 'vw_stair_properties';
   const STORAGE_KEY_RECORDS = 'vw_stair_records';
@@ -9,10 +9,12 @@
   let records = JSON.parse(localStorage.getItem(STORAGE_KEY_RECORDS)) || [];
   let currentPropertyId = properties[0]?.id || 'spanish-palms';
   let activeRecordId = records.find(r => r.propertyId === currentPropertyId)?.id || null;
+  let editingRecordId = null;
 
   function saveState() {
     localStorage.setItem(STORAGE_KEY_PROPERTIES, JSON.stringify(properties));
     localStorage.setItem(STORAGE_KEY_RECORDS, JSON.stringify(records));
+    updateAutocompletes();
   }
 
   function blockFormSubmissions() {
@@ -24,7 +26,7 @@
     });
   }
 
-  function getInputValue(identifiers) {
+  function findInputElement(identifiers) {
     const inputs = Array.from(document.querySelectorAll('input, textarea, select'));
     for (const id of identifiers) {
       const found = inputs.find(i => {
@@ -33,21 +35,56 @@
         const parentText = (i.closest('label') || i.parentElement)?.textContent.toLowerCase() || '';
         return nameAttr.includes(id) || idAttr.includes(id) || parentText.includes(id);
       });
-      if (found && found.value) return found.value;
+      if (found) return found;
     }
-    return '';
+    return null;
   }
 
-  function resetFormInputs() {
-    const inputs = Array.from(document.querySelectorAll('input, textarea'));
-    inputs.forEach(i => {
-      const nameAttr = (i.getAttribute('name') || '').toLowerCase();
-      const parentText = (i.closest('label') || i.parentElement)?.textContent.toLowerCase() || '';
-      if (nameAttr.includes('building') || parentText.includes('building') ||
-          nameAttr.includes('unit') || parentText.includes('unit')) {
-        i.value = '';
-      }
-    });
+  function getInputValue(identifiers) {
+    const el = findInputElement(identifiers);
+    return el ? el.value : '';
+  }
+
+  // Retain Building/Inspector/Period and clear ONLY Unit for fast 1-click entries
+  function resetUnitInputOnly() {
+    const unitInput = findInputElement(['unit', 'stairwell']);
+    if (unitInput) {
+      unitInput.value = '';
+      unitInput.focus();
+    }
+  }
+
+  // Dynamic Autocomplete (<datalist>) for Building, Inspector, and Period
+  function updateAutocompletes() {
+    const uniqueBuildings = [...new Set(records.map(r => r.building).filter(Boolean))];
+    const uniqueInspectors = [...new Set(records.map(r => r.inspector).filter(Boolean))];
+    const uniquePeriods = [...new Set(records.map(r => r.periodLabel).filter(Boolean))];
+
+    createOrUpdateDatalist('dl_buildings', uniqueBuildings);
+    createOrUpdateDatalist('dl_inspectors', uniqueInspectors);
+    createOrUpdateDatalist('dl_periods', uniquePeriods);
+
+    attachDatalistToInput(['building'], 'dl_buildings');
+    attachDatalistToInput(['inspector'], 'dl_inspectors');
+    attachDatalistToInput(['periodlabel', 'period'], 'dl_periods');
+  }
+
+  function createOrUpdateDatalist(id, items) {
+    let dl = document.getElementById(id);
+    if (!dl) {
+      dl = document.createElement('datalist');
+      dl.id = id;
+      document.body.appendChild(dl);
+    }
+    dl.innerHTML = items.map(item => `<option value="${item}"></option>`).join('');
+  }
+
+  function attachDatalistToInput(identifiers, datalistId) {
+    const el = findInputElement(identifiers);
+    if (el && el.tagName === 'INPUT') {
+      el.setAttribute('list', datalistId);
+      el.setAttribute('autocomplete', 'off');
+    }
   }
 
   function initPropertyDropdown() {
@@ -66,8 +103,10 @@
         currentPropertyId = e.target.value;
         const propRecs = records.filter(r => r.propertyId === currentPropertyId);
         activeRecordId = propRecs.length ? propRecs[0].id : null;
+        editingRecordId = null;
         renderStaircaseList();
         renderRightPanel();
+        updateAutocompletes();
       };
     }
 
@@ -83,6 +122,7 @@
               properties.push({ id, name });
               currentPropertyId = id;
               activeRecordId = null;
+              editingRecordId = null;
               saveState();
               initPropertyDropdown();
               renderStaircaseList();
@@ -100,9 +140,9 @@
     const handleCreate = (e) => {
       if (e) e.preventDefault();
 
-      const building = getInputValue(['building']) || '22';
-      const unit = getInputValue(['unit', 'stairwell']) || '2024';
-      const periodLabel = getInputValue(['periodlabel', 'period']) || 'QRT 3 2026';
+      const building = getInputValue(['building']) || 'Building 22';
+      const unit = getInputValue(['unit', 'stairwell']) || 'Unit 101';
+      const periodLabel = getInputValue(['periodlabel', 'period']) || 'Summer 2026 cycle';
       const inspectedOn = getInputValue(['inspectedon', 'inspected']) || new Date().toISOString().split('T')[0];
       const inspector = getInputValue(['inspector']) || 'R. Okonkwo';
       const stepCount = parseInt(getInputValue(['stepcount', 'treads']) || '17', 10);
@@ -128,9 +168,10 @@
 
       records.push(newRecord);
       activeRecordId = newRecord.id;
+      editingRecordId = null;
       saveState();
 
-      resetFormInputs();
+      resetUnitInputOnly();
       renderStaircaseList();
       renderRightPanel();
       return false;
@@ -142,6 +183,8 @@
         btn.onclick = handleCreate;
       }
     });
+
+    updateAutocompletes();
   }
 
   function renderStaircaseList() {
@@ -193,6 +236,7 @@
     listContainer.querySelectorAll('.stair-item').forEach(item => {
       item.onclick = () => {
         activeRecordId = item.getAttribute('data-id');
+        editingRecordId = null;
         renderStaircaseList();
         renderRightPanel();
       };
@@ -223,15 +267,59 @@
       return;
     }
 
+    const isEditingThis = editingRecordId === record.id;
+
     let html = `
       <div style="padding:20px; background:#fff; color:#111; border:1px solid #ddd; border-radius:6px;">
-        <div style="margin-bottom:15px; padding-bottom:10px; border-bottom:2px solid #ff5722; display:flex; justify-content:space-between; align-items:center;">
+        <div style="margin-bottom:15px; padding-bottom:10px; border-bottom:2px solid #ff5722; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
           <div>
             <h3 style="margin:0; font-size:18px; color:#111;">Building ${record.building} — Unit/Stairwell ${record.unit}</h3>
             <p style="font-size:13px; color:#555; margin-top:4px;">Inspector: <strong style="color:#111;">${record.inspector}</strong> | Period: <strong style="color:#111;">${record.periodLabel}</strong> | Date: ${record.inspectedOn}</p>
           </div>
-          <button type="button" onclick="window.deleteStaircase('${record.id}')" style="background:#d32f2f; color:#fff; border:none; padding:6px 12px; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;">Delete Staircase</button>
+          <div style="display:flex; gap:8px;">
+            <button type="button" onclick="window.toggleEditStaircase('${record.id}')" style="background:${isEditingThis ? '#ff9800' : '#0288d1'}; color:#fff; border:none; padding:6px 12px; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;">
+              ${isEditingThis ? 'Close Edit' : '✏️ Edit Details'}
+            </button>
+            <button type="button" onclick="window.deleteStaircase('${record.id}')" style="background:#d32f2f; color:#fff; border:none; padding:6px 12px; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;">Delete</button>
+          </div>
         </div>
+
+        ${isEditingThis ? `
+          <div style="background:#f0f7ff; padding:15px; border-radius:6px; border:1px solid #b3e5fc; margin-bottom:15px;">
+            <h4 style="margin:0 0 10px 0; color:#0277bd; font-size:14px;">✏️ EDIT STAIRCASE DETAILS</h4>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:10px; margin-bottom:12px;">
+              <div>
+                <label style="font-size:11px; font-weight:bold; color:#333; display:block; margin-bottom:3px;">Building:</label>
+                <input type="text" id="edit_bldg_${record.id}" list="dl_buildings" value="${record.building}" style="width:100%; padding:6px; box-sizing:border-box; color:#111; border:1px solid #ccc; border-radius:4px;" />
+              </div>
+              <div>
+                <label style="font-size:11px; font-weight:bold; color:#333; display:block; margin-bottom:3px;">Unit / Stairwell:</label>
+                <input type="text" id="edit_unit_${record.id}" value="${record.unit}" style="width:100%; padding:6px; box-sizing:border-box; color:#111; border:1px solid #ccc; border-radius:4px;" />
+              </div>
+              <div>
+                <label style="font-size:11px; font-weight:bold; color:#333; display:block; margin-bottom:3px;">Period Label:</label>
+                <input type="text" id="edit_period_${record.id}" list="dl_periods" value="${record.periodLabel}" style="width:100%; padding:6px; box-sizing:border-box; color:#111; border:1px solid #ccc; border-radius:4px;" />
+              </div>
+              <div>
+                <label style="font-size:11px; font-weight:bold; color:#333; display:block; margin-bottom:3px;">Inspected On:</label>
+                <input type="date" id="edit_date_${record.id}" value="${record.inspectedOn}" style="width:100%; padding:6px; box-sizing:border-box; color:#111; border:1px solid #ccc; border-radius:4px;" />
+              </div>
+              <div>
+                <label style="font-size:11px; font-weight:bold; color:#333; display:block; margin-bottom:3px;">Inspector:</label>
+                <input type="text" id="edit_inspector_${record.id}" list="dl_inspectors" value="${record.inspector}" style="width:100%; padding:6px; box-sizing:border-box; color:#111; border:1px solid #ccc; border-radius:4px;" />
+              </div>
+              <div>
+                <label style="font-size:11px; font-weight:bold; color:#333; display:block; margin-bottom:3px;">Step Count:</label>
+                <input type="number" id="edit_steps_${record.id}" value="${record.stepCount || record.treads.length}" min="1" max="50" style="width:100%; padding:6px; box-sizing:border-box; color:#111; border:1px solid #ccc; border-radius:4px;" />
+              </div>
+            </div>
+            <div style="display:flex; gap:8px;">
+              <button type="button" onclick="window.saveStaircaseEdit('${record.id}')" style="background:#2e7d32; color:#fff; border:none; padding:6px 14px; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;">✓ Save Changes</button>
+              <button type="button" onclick="window.toggleEditStaircase('${record.id}')" style="background:#757575; color:#fff; border:none; padding:6px 14px; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;">Cancel</button>
+            </div>
+          </div>
+        ` : ''}
+
         <div class="tread-grid" style="display:flex; flex-direction:column; gap:10px;">
     `;
 
@@ -254,7 +342,6 @@
             </div>
           </div>
 
-          <!-- Camera Capture Row on Every Step -->
           <div style="margin-top:10px; padding-top:8px; border-top:1px dashed ${isFlagged ? '#ef9a9a' : '#eee'}; display:flex; justify-content:space-between; align-items:center;">
             <div style="display:flex; align-items:center; gap:10px;">
               <label style="background:${hasPhoto ? '#2e7d32' : '#ff5722'}; color:#fff; padding:6px 12px; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:5px; box-shadow:0 1px 3px rgba(0,0,0,0.2);">
@@ -279,7 +366,48 @@
     mainPanel.innerHTML = html;
   }
 
-  // GLOBAL ACTIONS
+  window.toggleEditStaircase = function (recId) {
+    editingRecordId = editingRecordId === recId ? null : recId;
+    renderRightPanel();
+  };
+
+  window.saveStaircaseEdit = function (recId) {
+    const record = records.find(r => r.id === recId);
+    if (!record) return;
+
+    const bldgInput = document.getElementById(`edit_bldg_${recId}`);
+    const unitInput = document.getElementById(`edit_unit_${recId}`);
+    const periodInput = document.getElementById(`edit_period_${recId}`);
+    const dateInput = document.getElementById(`edit_date_${recId}`);
+    const inspectorInput = document.getElementById(`edit_inspector_${recId}`);
+    const stepsInput = document.getElementById(`edit_steps_${recId}`);
+
+    if (bldgInput) record.building = bldgInput.value.trim() || record.building;
+    if (unitInput) record.unit = unitInput.value.trim() || record.unit;
+    if (periodInput) record.periodLabel = periodInput.value.trim() || record.periodLabel;
+    if (dateInput) record.inspectedOn = dateInput.value || record.inspectedOn;
+    if (inspectorInput) record.inspector = inspectorInput.value.trim() || record.inspector;
+
+    if (stepsInput) {
+      const newCount = parseInt(stepsInput.value, 10);
+      if (!isNaN(newCount) && newCount > 0 && newCount !== record.treads.length) {
+        record.stepCount = newCount;
+        if (newCount > record.treads.length) {
+          for (let i = record.treads.length + 1; i <= newCount; i++) {
+            record.treads.push({ step: i, condition: 'PASS', notes: '', photos: [] });
+          }
+        } else {
+          record.treads = record.treads.slice(0, newCount);
+        }
+      }
+    }
+
+    editingRecordId = null;
+    saveState();
+    renderStaircaseList();
+    renderRightPanel();
+  };
+
   window.deleteStaircase = function (recId) {
     if (confirm('Are you sure you want to delete this staircase record?')) {
       records = records.filter(r => r.id !== recId);
@@ -287,6 +415,7 @@
         const remaining = records.filter(r => r.propertyId === currentPropertyId);
         activeRecordId = remaining.length ? remaining[0].id : null;
       }
+      if (editingRecordId === recId) editingRecordId = null;
       saveState();
       renderStaircaseList();
       renderRightPanel();
@@ -297,6 +426,7 @@
     if (confirm(`Are you sure you want to clear all test staircases for this property?`)) {
       records = records.filter(r => r.propertyId !== currentPropertyId);
       activeRecordId = null;
+      editingRecordId = null;
       saveState();
       renderStaircaseList();
       renderRightPanel();
@@ -341,6 +471,7 @@
     initStaircaseForm();
     renderStaircaseList();
     renderRightPanel();
+    updateAutocompletes();
   }
 
   if (document.readyState === 'loading') {
