@@ -1,4 +1,4 @@
-// Complete Client-Side App Logic (Zero Backend Required)
+// Complete Client-Side App Logic (High-Contrast Black Text Fix)
 (function () {
   const STORAGE_KEY_PROPERTIES = 'vw_stair_properties';
   const STORAGE_KEY_RECORDS = 'vw_stair_records';
@@ -8,83 +8,93 @@
   ];
   let records = JSON.parse(localStorage.getItem(STORAGE_KEY_RECORDS)) || [];
   let currentPropertyId = properties[0]?.id || 'spanish-palms';
-  let activeRecordId = null;
+  let activeRecordId = records.find(r => r.propertyId === currentPropertyId)?.id || null;
 
   function saveState() {
     localStorage.setItem(STORAGE_KEY_PROPERTIES, JSON.stringify(properties));
     localStorage.setItem(STORAGE_KEY_RECORDS, JSON.stringify(records));
   }
 
-  function getElementByText(selector, text) {
-    const elements = Array.from(document.querySelectorAll(selector));
-    return elements.find(el => el.textContent.trim().toLowerCase().includes(text.toLowerCase()));
+  function blockFormSubmissions() {
+    document.querySelectorAll('form').forEach(form => {
+      form.onsubmit = (e) => {
+        e.preventDefault();
+        return false;
+      };
+    });
   }
 
-  // 1. PROPERTY DROPDOWN & ADD PROPERTY
+  function getInputValue(identifiers) {
+    const inputs = Array.from(document.querySelectorAll('input, textarea, select'));
+    for (const id of identifiers) {
+      const found = inputs.find(i => {
+        const nameAttr = (i.getAttribute('name') || '').toLowerCase();
+        const idAttr = (i.getAttribute('id') || '').toLowerCase();
+        const parentText = (i.closest('label') || i.parentElement)?.textContent.toLowerCase() || '';
+        return nameAttr.includes(id) || idAttr.includes(id) || parentText.includes(id);
+      });
+      if (found && found.value) return found.value;
+    }
+    return '';
+  }
+
   function initPropertyDropdown() {
     const select = document.querySelector('select');
-    if (!select) return;
+    if (select) {
+      select.innerHTML = '';
+      properties.forEach(prop => {
+        const opt = document.createElement('option');
+        opt.value = prop.id;
+        opt.textContent = prop.name;
+        if (prop.id === currentPropertyId) opt.selected = true;
+        select.appendChild(opt);
+      });
 
-    select.innerHTML = '';
-    properties.forEach(prop => {
-      const opt = document.createElement('option');
-      opt.value = prop.id;
-      opt.textContent = prop.name;
-      if (prop.id === currentPropertyId) opt.selected = true;
-      select.appendChild(opt);
-    });
-
-    select.onchange = (e) => {
-      currentPropertyId = e.target.value;
-      activeRecordId = null;
-      renderStaircaseList();
-      renderRightPanel();
-    };
-
-    const addPropBtn = getElementByText('button', 'add property');
-    if (addPropBtn) {
-      addPropBtn.onclick = (e) => {
-        e.preventDefault();
-        const propName = prompt('Enter new Property Name:');
-        if (propName && propName.trim()) {
-          const name = propName.trim();
-          const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-          if (!properties.some(p => p.id === id)) {
-            properties.push({ id, name });
-            currentPropertyId = id;
-            saveState();
-            initPropertyDropdown();
-            renderStaircaseList();
-            renderRightPanel();
-          }
-        }
+      select.onchange = (e) => {
+        currentPropertyId = e.target.value;
+        const propRecs = records.filter(r => r.propertyId === currentPropertyId);
+        activeRecordId = propRecs.length ? propRecs[0].id : null;
+        renderStaircaseList();
+        renderRightPanel();
       };
     }
+
+    document.querySelectorAll('button, a, input[type="button"]').forEach(btn => {
+      if (btn.textContent.trim().toLowerCase().includes('add property')) {
+        btn.onclick = (e) => {
+          e.preventDefault();
+          const propName = prompt('Enter new Property Name:');
+          if (propName && propName.trim()) {
+            const name = propName.trim();
+            const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+            if (!properties.some(p => p.id === id)) {
+              properties.push({ id, name });
+              currentPropertyId = id;
+              activeRecordId = null;
+              saveState();
+              initPropertyDropdown();
+              renderStaircaseList();
+              renderRightPanel();
+            }
+          }
+        };
+      }
+    });
   }
 
-  // 2. CREATE STAIRCASE RECORD
   function initStaircaseForm() {
-    const createBtn = getElementByText('button', 'create staircase record');
-    if (!createBtn) return;
+    blockFormSubmissions();
 
-    createBtn.onclick = (e) => {
-      e.preventDefault();
+    const handleCreate = (e) => {
+      if (e) e.preventDefault();
 
-      const inputs = Array.from(document.querySelectorAll('input, textarea'));
-      const getVal = (term) => {
-        const found = inputs.find(i => {
-          const p = i.closest('label') || i.parentElement;
-          return p && p.textContent.toLowerCase().includes(term);
-        });
-        return found ? found.value : '';
-      };
-
-      const building = getVal('building') || 'Building B';
-      const unit = getVal('unit') || 'Unit 204';
-      const periodLabel = getVal('period') || 'Summer 2026 cycle';
-      const inspectedOn = getVal('inspected') || new Date().toISOString().split('T')[0];
-      const inspector = getVal('inspector') || 'R. Okonkwo';
-      const stepCount = parseInt(getVal('treads') || '17', 10);
+      const building = getInputValue(['building']) || '22';
+      const unit = getInputValue(['unit', 'stairwell']) || '2024';
+      const periodLabel = getInputValue(['periodlabel', 'period']) || 'QRT 3 2026';
+      const inspectedOn = getInputValue(['inspectedon', 'inspected']) || new Date().toISOString().split('T')[0];
+      const inspector = getInputValue(['inspector']) || 'R. Okonkwo';
+      const stepCount = parseInt(getInputValue(['stepcount', 'treads']) || '17', 10);
+      const notes = getInputValue(['notes', 'stairwell']) || '';
 
       const treads = [];
       for (let i = 1; i <= stepCount; i++) {
@@ -100,6 +110,7 @@
         inspectedOn,
         inspector,
         stepCount,
+        notes,
         treads
       };
 
@@ -109,37 +120,49 @@
 
       renderStaircaseList();
       renderRightPanel();
+      return false;
     };
+
+    document.querySelectorAll('form').forEach(f => f.onsubmit = handleCreate);
+    document.querySelectorAll('button, input[type="submit"], .btn').forEach(btn => {
+      if (btn.textContent.trim().toLowerCase().includes('create staircase record')) {
+        btn.onclick = handleCreate;
+      }
+    });
   }
 
   function renderStaircaseList() {
-    const sidebar = document.querySelector('.staircases, #staircases') || 
-                    getElementByText('h4', 'staircases')?.parentElement;
-    if (!sidebar) return;
-
-    let listContainer = sidebar.querySelector('.custom-staircase-items');
+    let listContainer = document.querySelector('#loggedStaircasesList');
     if (!listContainer) {
+      const sidebar = document.querySelectorAll('div')[1] || document.body;
       listContainer = document.createElement('div');
-      listContainer.className = 'custom-staircase-items';
-      listContainer.style.marginTop = '15px';
-      sidebar.appendChild(listContainer);
+      listContainer.id = 'loggedStaircasesList';
+      listContainer.style.cssText = 'margin-top:20px; padding:15px; background:#fff; color:#111; border:1px solid #ddd; border-radius:6px;';
+      
+      const formBtn = document.querySelectorAll('button, input[type="submit"]')[0];
+      if (formBtn && formBtn.parentElement) {
+        formBtn.parentElement.appendChild(listContainer);
+      } else {
+        sidebar.appendChild(listContainer);
+      }
     }
 
     const propRecords = records.filter(r => r.propertyId === currentPropertyId);
 
     if (propRecords.length === 0) {
-      listContainer.innerHTML = '<p style="font-size:12px; opacity:0.7; margin-top:10px;">No staircases logged for this property yet.</p>';
+      listContainer.innerHTML = '<strong style="display:block; margin-bottom:5px; font-size:12px; color:#555;">LOGGED STAIRCASES</strong><p style="font-size:12px; color:#888; margin:0;">No staircases logged for this property yet.</p>';
       return;
     }
 
-    listContainer.innerHTML = propRecords.map(r => `
-      <div class="stair-item ${r.id === activeRecordId ? 'active' : ''}" 
-           data-id="${r.id}"
-           style="padding:10px; margin-bottom:8px; border:1px solid ${r.id === activeRecordId ? '#ff5722' : '#ccc'}; background:${r.id === activeRecordId ? '#fff3e0' : '#f9f9f9'}; cursor:pointer; border-radius:4px;">
-        <strong>${r.building} - ${r.unit}</strong><br>
-        <small>${r.periodLabel} | ${r.treads.length} Steps</small>
-      </div>
-    `).join('');
+    listContainer.innerHTML = `
+      <strong style="display:block; margin-bottom:10px; color:#ff5722; font-size:13px;">LOGGED STAIRCASES (CLICK TO SELECT)</strong>
+      ${propRecords.map(r => `
+        <div class="stair-item" data-id="${r.id}" style="padding:10px; margin-bottom:8px; border:2px solid ${r.id === activeRecordId ? '#ff5722' : '#ccc'}; background:${r.id === activeRecordId ? '#fff3e0' : '#f9f9f9'}; color:#111; cursor:pointer; border-radius:4px;">
+          <div style="font-weight:bold; font-size:14px; color:#111;">Bldg ${r.building} — Unit/Stair ${r.unit}</div>
+          <div style="font-size:12px; color:#555; margin-top:2px;">${r.periodLabel} | ${r.treads.length} Steps | ${r.inspectedOn}</div>
+        </div>
+      `).join('')}
+    `;
 
     listContainer.querySelectorAll('.stair-item').forEach(item => {
       item.onclick = () => {
@@ -150,66 +173,73 @@
     });
   }
 
-  // 3. RIGHT PANEL (TREAD GRID)
   function renderRightPanel() {
-    const mainPanel = getElementByText('h4', 'no staircase selected')?.parentElement || 
-                      document.querySelectorAll('.main-panel, #mainPanel')[0] ||
-                      document.querySelectorAll('div')[2];
-
-    if (!mainPanel) return;
+    let mainPanel = document.querySelector('.main-panel') || document.querySelectorAll('div')[2] || document.body;
+    
+    const headers = Array.from(document.querySelectorAll('h3, h4, div'));
+    const targetHeader = headers.find(el => el.textContent.toLowerCase().includes('no staircase selected') || el.textContent.toLowerCase().includes('step 1'));
+    if (targetHeader) {
+      mainPanel = targetHeader.closest('div') || mainPanel;
+    }
 
     const record = records.find(r => r.id === activeRecordId);
 
     if (!record) {
       mainPanel.innerHTML = `
-        <h4>NO STAIRCASE SELECTED</h4>
-        <p style="opacity:0.8;">Pick a staircase from the left list, or log a new one.</p>
-        <div style="text-align:center; padding:40px; color:#888;">
-          <p>Every tread is recorded, not just the damaged ones. Photos attach to the treads you flag.</p>
+        <div style="padding:20px; background:#fff; color:#111; border:1px solid #ddd; border-radius:6px;">
+          <h4 style="margin-top:0; color:#111;">NO STAIRCASE SELECTED</h4>
+          <p style="opacity:0.8; color:#333;">Pick a staircase from the left list, or fill in the form and click "Create staircase record".</p>
+          <div style="text-align:center; padding:30px; color:#666;">
+            <p>Every tread is recorded, not just the damaged ones. Photos attach to the treads you flag.</p>
+          </div>
         </div>
       `;
       return;
     }
 
     let html = `
-      <div style="margin-bottom:20px; padding-bottom:10px; border-bottom:2px solid #ff5722;">
-        <h3 style="margin:0;">${record.building} — ${record.unit}</h3>
-        <p style="font-size:13px; color:#555; margin-top:5px;">Inspector: <strong>${record.inspector}</strong> | Period: <strong>${record.periodLabel}</strong> | Date: ${record.inspectedOn}</p>
-      </div>
-      <div class="tread-grid" style="display:flex; flex-direction:column; gap:10px;">
+      <div style="padding:20px; background:#fff; color:#111; border:1px solid #ddd; border-radius:6px;">
+        <div style="margin-bottom:15px; padding-bottom:10px; border-bottom:2px solid #ff5722; display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <h3 style="margin:0; font-size:18px; color:#111;">Building ${record.building} — Unit/Stairwell ${record.unit}</h3>
+            <p style="font-size:13px; color:#555; margin-top:4px;">Inspector: <strong style="color:#111;">${record.inspector}</strong> | Period: <strong style="color:#111;">${record.periodLabel}</strong> | Date: ${record.inspectedOn}</p>
+          </div>
+          <span style="background:#4caf50; color:#fff; padding:4px 10px; border-radius:12px; font-size:12px; font-weight:bold;">Active Inspection</span>
+        </div>
+        <div class="tread-grid" style="display:flex; flex-direction:column; gap:10px;">
     `;
 
     record.treads.forEach((tread, idx) => {
       const isFlagged = ['C', 'HSW'].includes(tread.condition);
       html += `
-        <div style="padding:10px; border:1px solid ${isFlagged ? '#e53935' : '#ddd'}; background:${isFlagged ? '#ffebee' : '#fff'}; border-radius:4px;">
+        <div style="padding:12px; border:1px solid ${isFlagged ? '#e53935' : '#e0e0e0'}; background:${isFlagged ? '#ffebee' : '#ffffff'}; color:#111; border-radius:6px;">
           <div style="display:flex; justify-content:space-between; align-items:center;">
-            <strong>Step ${tread.step}</strong>
-            <div style="display:flex; gap:5px;">
+            <strong style="font-size:15px; color:#111; font-weight:800;">Step ${tread.step}</strong>
+            <div style="display:flex; gap:6px;">
               ${['PASS', 'C', 'N', 'MON', 'HSW'].map(code => `
                 <button type="button" 
                         onclick="window.updateTreadStatus('${record.id}', ${idx}, '${code}')"
-                        style="padding:4px 8px; font-size:11px; border-radius:3px; border:1px solid #ccc; cursor:pointer; background:${tread.condition === code ? '#333' : '#fff'}; color:${tread.condition === code ? '#fff' : '#333'}; font-weight:bold;">
+                        style="padding:5px 10px; font-size:12px; border-radius:4px; border:1px solid #bbb; cursor:pointer; font-weight:bold; background:${tread.condition === code ? '#111' : '#fff'}; color:${tread.condition === code ? '#fff' : '#111'};">
                   ${code}
                 </button>
               `).join('')}
             </div>
           </div>
           ${isFlagged ? `
-            <div style="margin-top:8px; display:flex; gap:10px; align-items:center;">
-              <input type="file" accept="image/*" onchange="window.handlePhotoUpload('${record.id}', ${idx}, this)" style="font-size:11px;" />
-              ${tread.photos && tread.photos.length ? `<img src="${tread.photos[0]}" style="height:35px; border-radius:3px; border:1px solid #ccc;" />` : ''}
+            <div style="margin-top:10px; padding-top:8px; border-top:1px dashed #e53935; display:flex; gap:12px; align-items:center;">
+              <label style="font-size:12px; font-weight:bold; color:#c62828;">Photo Evidence:</label>
+              <input type="file" accept="image/*" onchange="window.handlePhotoUpload('${record.id}', ${idx}, this)" style="font-size:11px; color:#111;" />
+              ${tread.photos && tread.photos.length ? `<img src="${tread.photos[0]}" style="height:45px; width:45px; object-fit:cover; border-radius:4px; border:1px solid #ccc;" />` : ''}
             </div>
           ` : ''}
         </div>
       `;
     });
 
-    html += `</div>`;
+    html += `</div></div>`;
     mainPanel.innerHTML = html;
   }
 
-  // 4. GLOBAL TREAD HANDLERS
   window.updateTreadStatus = function (recId, treadIdx, code) {
     const record = records.find(r => r.id === recId);
     if (!record) return;
@@ -232,23 +262,11 @@
     reader.readAsDataURL(input.files[0]);
   };
 
-  // 5. PDF REPORT
-  function initReportGenerator() {
-    const pdfBtn = getElementByText('button', 'generate pdf');
-    if (pdfBtn) {
-      pdfBtn.onclick = (e) => {
-        e.preventDefault();
-        window.print();
-      };
-    }
-  }
-
   function init() {
     initPropertyDropdown();
     initStaircaseForm();
     renderStaircaseList();
     renderRightPanel();
-    initReportGenerator();
   }
 
   if (document.readyState === 'loading') {
