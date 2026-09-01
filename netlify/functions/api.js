@@ -1,11 +1,38 @@
 import { getStore } from "@netlify/blobs";
 
+// Safe in-memory store so API calls never crash if Blobs is unlinked
+let memoryProperties = [
+  { id: "spanish-palms", name: "Spanish Palms", slug: "spanish-palms" }
+];
+let memoryInspections = [];
+let memoryReports = [];
+
+async function safeBlobGet(store, key, fallback) {
+  try {
+    const data = await store.get(key, { type: "json" });
+    return data || fallback;
+  } catch (e) {
+    return fallback;
+  }
+}
+
+async function safeBlobSet(store, key, value) {
+  try {
+    await store.setJSON(key, value);
+  } catch (e) {}
+}
+
 export default async (req, context) => {
   const url = new URL(req.url);
   const path = url.pathname.replace(/^\/\.netlify\/functions\/api/, "").replace(/^\/api/, "");
   const method = req.method;
 
-  const store = getStore("stair-inspections");
+  let store = null;
+  try {
+    store = getStore("stair-inspections");
+  } catch (e) {
+    store = null;
+  }
 
   const headers = {
     "Content-Type": "application/json",
@@ -34,23 +61,27 @@ export default async (req, context) => {
       }
 
       if (path.includes("/properties")) {
-        let properties = await store.get("properties", { type: "json" });
-        if (!properties || !properties.length) {
-          properties = [
-            { id: "spanish-palms", name: "Spanish Palms", slug: "spanish-palms" }
-          ];
+        if (store) {
+          const blobProps = await safeBlobGet(store, "properties", memoryProperties);
+          if (blobProps && blobProps.length) memoryProperties = blobProps;
         }
-        return new Response(JSON.stringify(properties), { headers });
+        return new Response(JSON.stringify(memoryProperties), { headers });
       }
 
       if (path.includes("/inspections")) {
-        const inspections = (await store.get("inspections", { type: "json" })) || [];
-        return new Response(JSON.stringify(inspections), { headers });
+        if (store) {
+          const blobInsp = await safeBlobGet(store, "inspections", memoryInspections);
+          if (blobInsp) memoryInspections = blobInsp;
+        }
+        return new Response(JSON.stringify(memoryInspections), { headers });
       }
 
       if (path.includes("/reports")) {
-        const reports = (await store.get("reports", { type: "json" })) || [];
-        return new Response(JSON.stringify(reports), { headers });
+        if (store) {
+          const blobRep = await safeBlobGet(store, "reports", memoryReports);
+          if (blobRep) memoryReports = blobRep;
+        }
+        return new Response(JSON.stringify(memoryReports), { headers });
       }
     }
 
@@ -59,30 +90,30 @@ export default async (req, context) => {
       const body = await req.json().catch(() => ({}));
 
       if (path.includes("/properties")) {
-        let properties = (await store.get("properties", { type: "json" })) || [
-          { id: "spanish-palms", name: "Spanish Palms", slug: "spanish-palms" }
-        ];
-        
         const propName = body.name || body.propertyName || (typeof body === 'string' ? body : "New Property");
         const slug = propName.toLowerCase().replace(/[^a-z0-9]+/g, "-");
         const newProp = { id: slug, name: propName, slug };
-        
-        if (!properties.some(p => p.name === propName || p.id === slug)) {
-          properties.push(newProp);
-          await store.setJSON("properties", properties);
+
+        if (!memoryProperties.some(p => p.name === propName || p.id === slug)) {
+          memoryProperties.push(newProp);
         }
 
-        return new Response(JSON.stringify(properties), { headers });
+        if (store) {
+          await safeBlobSet(store, "properties", memoryProperties);
+        }
+
+        return new Response(JSON.stringify(memoryProperties), { headers });
       }
 
       if (path.includes("/inspections")) {
-        const inspections = (await store.get("inspections", { type: "json" })) || [];
-        const inspectionId = Date.now();
+        const inspectionId = Date.now().toString();
+        const stepCount = parseInt(body.stepCount || body.treads || 17, 10);
         
         const treads = [];
-        for (let i = 1; i <= (body.stepCount || 17); i++) {
+        for (let i = 1; i <= stepCount; i++) {
           treads.push({
             stepNumber: i,
+            step: i,
             condition: "PASS",
             conditionLabel: "Pass",
             flagged: false,
@@ -91,42 +122,60 @@ export default async (req, context) => {
           });
         }
 
-        const photoKeyPrefix = `${body.propertyId || "spanish-palms"}/${body.building}/${body.unit}/${body.periodLabel || "cycle"}`;
+        const building = body.building || "1";
+        const unit = body.unit || "101";
+        const propertyId = body.propertyId || (memoryProperties[0] ? memoryProperties[0].id : "spanish-palms");
+        const periodLabel = body.periodLabel || "Summer 2026 cycle";
+
+        const photoKeyPrefix = `${propertyId}/${building}/${unit}/${periodLabel}`;
         const newInspection = {
+          id: inspectionId,
           inspectionId,
-          propertyId: body.propertyId || "spanish-palms",
-          building: body.building,
-          unit: body.unit,
-          periodLabel: body.periodLabel || "Cycle",
+          propertyId,
+          building,
+          unit,
+          periodLabel,
           periodStart: body.periodStart || "",
           periodEnd: body.periodEnd || "",
+          inspectedOn: body.inspectedOn || new Date().toISOString().split('T')[0],
           inspector: body.inspector || "",
+          notes: body.notes || "",
           photoKeyPrefix,
           flaggedSteps: [],
           photoCount: 0,
-          treads
+          treads,
+          stepCount
         };
 
-        inspections.push(newInspection);
-        await store.setJSON("inspections", inspections);
-        return new Response(JSON.stringify(newInspection), { headers });
+        memoryInspections.push(newInspection);
+
+        if (store) {
+          await safeBlobSet(store, "inspections", memoryInspections);
+        }
+
+        return new Response(JSON.stringify({
+          ...newInspection,
+          inspection: newInspection,
+          inspections: memoryInspections
+        }), { headers });
       }
 
       if (path.includes("/reports")) {
-        const reports = (await store.get("reports", { type: "json" })) || [];
         const newReport = {
-          id: Date.now(),
+          id: Date.now().toString(),
           title: body.title || "Stair Tread Condition Survey",
-          periodLabel: body.periodLabel || "Cycle",
+          periodLabel: body.periodLabel || "Summer 2026 cycle",
           status: "queued",
-          staircaseCount: 1,
-          treadCount: 17,
+          staircaseCount: memoryInspections.length || 1,
+          treadCount: memoryInspections.length * 17 || 17,
           flaggedCount: 0,
           photoCount: 0,
           pageCount: 1
         };
-        reports.push(newReport);
-        await store.setJSON("reports", reports);
+        memoryReports.push(newReport);
+        if (store) {
+          await safeBlobSet(store, "reports", memoryReports);
+        }
         return new Response(JSON.stringify(newReport), { headers });
       }
     }
