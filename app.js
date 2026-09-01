@@ -1,4 +1,4 @@
-// Complete Client-Side App Logic (High-Contrast Black Text Fix)
+// Complete Client-Side App Logic (With Delete & Field UX Enhancements)
 (function () {
   const STORAGE_KEY_PROPERTIES = 'vw_stair_properties';
   const STORAGE_KEY_RECORDS = 'vw_stair_records';
@@ -36,6 +36,18 @@
       if (found && found.value) return found.value;
     }
     return '';
+  }
+
+  function resetFormInputs() {
+    const inputs = Array.from(document.querySelectorAll('input, textarea'));
+    inputs.forEach(i => {
+      const nameAttr = (i.getAttribute('name') || '').toLowerCase();
+      const parentText = (i.closest('label') || i.parentElement)?.textContent.toLowerCase() || '';
+      if (nameAttr.includes('building') || parentText.includes('building') ||
+          nameAttr.includes('unit') || parentText.includes('unit')) {
+        i.value = '';
+      }
+    });
   }
 
   function initPropertyDropdown() {
@@ -118,6 +130,7 @@
       activeRecordId = newRecord.id;
       saveState();
 
+      resetFormInputs();
       renderStaircaseList();
       renderRightPanel();
       return false;
@@ -155,13 +168,25 @@
     }
 
     listContainer.innerHTML = `
-      <strong style="display:block; margin-bottom:10px; color:#ff5722; font-size:13px;">LOGGED STAIRCASES (CLICK TO SELECT)</strong>
-      ${propRecords.map(r => `
-        <div class="stair-item" data-id="${r.id}" style="padding:10px; margin-bottom:8px; border:2px solid ${r.id === activeRecordId ? '#ff5722' : '#ccc'}; background:${r.id === activeRecordId ? '#fff3e0' : '#f9f9f9'}; color:#111; cursor:pointer; border-radius:4px;">
-          <div style="font-weight:bold; font-size:14px; color:#111;">Bldg ${r.building} — Unit/Stair ${r.unit}</div>
-          <div style="font-size:12px; color:#555; margin-top:2px;">${r.periodLabel} | ${r.treads.length} Steps | ${r.inspectedOn}</div>
-        </div>
-      `).join('')}
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+        <strong style="color:#ff5722; font-size:13px;">LOGGED STAIRCASES (${propRecords.length})</strong>
+        <button type="button" onclick="window.clearAllStaircases()" style="background:#e53935; color:#fff; border:none; padding:4px 8px; border-radius:3px; font-size:10px; font-weight:bold; cursor:pointer;">Clear All</button>
+      </div>
+      ${propRecords.map(r => {
+        const flaggedCount = r.treads.filter(t => ['C', 'HSW'].includes(t.condition)).length;
+        const isSelected = r.id === activeRecordId;
+        return `
+          <div class="stair-item" data-id="${r.id}" style="padding:10px; margin-bottom:8px; border:2px solid ${isSelected ? '#ff5722' : '#ccc'}; background:${isSelected ? '#fff3e0' : '#f9f9f9'}; color:#111; border-radius:4px; cursor:pointer;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+              <div style="font-weight:bold; font-size:14px; color:#111; padding-right:10px;">Bldg ${r.building} — Unit/Stair ${r.unit}</div>
+              <button type="button" onclick="event.stopPropagation(); window.deleteStaircase('${r.id}')" title="Delete Staircase" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:3px; padding:2px 6px; font-size:11px; font-weight:bold; cursor:pointer;">✕ Delete</button>
+            </div>
+            <div style="font-size:12px; color:#555; margin-top:4px;">
+              ${r.periodLabel} | ${r.treads.length} Steps ${flaggedCount > 0 ? `<span style="color:#d32f2f; font-weight:bold;">| ⚠️ ${flaggedCount} Flagged</span>` : ''}
+            </div>
+          </div>
+        `;
+      }).join('')}
     `;
 
     listContainer.querySelectorAll('.stair-item').forEach(item => {
@@ -204,7 +229,7 @@
             <h3 style="margin:0; font-size:18px; color:#111;">Building ${record.building} — Unit/Stairwell ${record.unit}</h3>
             <p style="font-size:13px; color:#555; margin-top:4px;">Inspector: <strong style="color:#111;">${record.inspector}</strong> | Period: <strong style="color:#111;">${record.periodLabel}</strong> | Date: ${record.inspectedOn}</p>
           </div>
-          <span style="background:#4caf50; color:#fff; padding:4px 10px; border-radius:12px; font-size:12px; font-weight:bold;">Active Inspection</span>
+          <button type="button" onclick="window.deleteStaircase('${record.id}')" style="background:#d32f2f; color:#fff; border:none; padding:6px 12px; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;">Delete Staircase</button>
         </div>
         <div class="tread-grid" style="display:flex; flex-direction:column; gap:10px;">
     `;
@@ -239,6 +264,30 @@
     html += `</div></div>`;
     mainPanel.innerHTML = html;
   }
+
+  // GLOBAL ACTIONS
+  window.deleteStaircase = function (recId) {
+    if (confirm('Are you sure you want to delete this staircase record?')) {
+      records = records.filter(r => r.id !== recId);
+      if (activeRecordId === recId) {
+        const remaining = records.filter(r => r.propertyId === currentPropertyId);
+        activeRecordId = remaining.length ? remaining[0].id : null;
+      }
+      saveState();
+      renderStaircaseList();
+      renderRightPanel();
+    }
+  };
+
+  window.clearAllStaircases = function () {
+    if (confirm(`Are you sure you want to clear all test staircases for this property?`)) {
+      records = records.filter(r => r.propertyId !== currentPropertyId);
+      activeRecordId = null;
+      saveState();
+      renderStaircaseList();
+      renderRightPanel();
+    }
+  };
 
   window.updateTreadStatus = function (recId, treadIdx, code) {
     const record = records.find(r => r.id === recId);
