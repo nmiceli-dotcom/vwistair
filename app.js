@@ -1,4 +1,4 @@
-// Complete Client-Side App Logic (With Delete & Field UX Enhancements)
+// Complete Client-Side App Logic (Camera Button on Every Step)
 (function () {
   const STORAGE_KEY_PROPERTIES = 'vw_stair_properties';
   const STORAGE_KEY_RECORDS = 'vw_stair_records';
@@ -174,6 +174,7 @@
       </div>
       ${propRecords.map(r => {
         const flaggedCount = r.treads.filter(t => ['C', 'HSW'].includes(t.condition)).length;
+        const photoCount = r.treads.filter(t => t.photos && t.photos.length > 0).length;
         const isSelected = r.id === activeRecordId;
         return `
           <div class="stair-item" data-id="${r.id}" style="padding:10px; margin-bottom:8px; border:2px solid ${isSelected ? '#ff5722' : '#ccc'}; background:${isSelected ? '#fff3e0' : '#f9f9f9'}; color:#111; border-radius:4px; cursor:pointer;">
@@ -182,7 +183,7 @@
               <button type="button" onclick="event.stopPropagation(); window.deleteStaircase('${r.id}')" title="Delete Staircase" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:3px; padding:2px 6px; font-size:11px; font-weight:bold; cursor:pointer;">✕ Delete</button>
             </div>
             <div style="font-size:12px; color:#555; margin-top:4px;">
-              ${r.periodLabel} | ${r.treads.length} Steps ${flaggedCount > 0 ? `<span style="color:#d32f2f; font-weight:bold;">| ⚠️ ${flaggedCount} Flagged</span>` : ''}
+              ${r.periodLabel} | ${r.treads.length} Steps | 📷 ${photoCount} Photos ${flaggedCount > 0 ? `<span style="color:#d32f2f; font-weight:bold;">| ⚠️ ${flaggedCount} Flagged</span>` : ''}
             </div>
           </div>
         `;
@@ -215,7 +216,7 @@
           <h4 style="margin-top:0; color:#111;">NO STAIRCASE SELECTED</h4>
           <p style="opacity:0.8; color:#333;">Pick a staircase from the left list, or fill in the form and click "Create staircase record".</p>
           <div style="text-align:center; padding:30px; color:#666;">
-            <p>Every tread is recorded, not just the damaged ones. Photos attach to the treads you flag.</p>
+            <p>Every tread is recorded, not just the damaged ones. Use the camera button on each step to attach photo evidence.</p>
           </div>
         </div>
       `;
@@ -236,6 +237,8 @@
 
     record.treads.forEach((tread, idx) => {
       const isFlagged = ['C', 'HSW'].includes(tread.condition);
+      const hasPhoto = tread.photos && tread.photos.length > 0;
+
       html += `
         <div style="padding:12px; border:1px solid ${isFlagged ? '#e53935' : '#e0e0e0'}; background:${isFlagged ? '#ffebee' : '#ffffff'}; color:#111; border-radius:6px;">
           <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -250,13 +253,24 @@
               `).join('')}
             </div>
           </div>
-          ${isFlagged ? `
-            <div style="margin-top:10px; padding-top:8px; border-top:1px dashed #e53935; display:flex; gap:12px; align-items:center;">
-              <label style="font-size:12px; font-weight:bold; color:#c62828;">Photo Evidence:</label>
-              <input type="file" accept="image/*" onchange="window.handlePhotoUpload('${record.id}', ${idx}, this)" style="font-size:11px; color:#111;" />
-              ${tread.photos && tread.photos.length ? `<img src="${tread.photos[0]}" style="height:45px; width:45px; object-fit:cover; border-radius:4px; border:1px solid #ccc;" />` : ''}
+
+          <!-- Camera Capture Row on Every Step -->
+          <div style="margin-top:10px; padding-top:8px; border-top:1px dashed ${isFlagged ? '#ef9a9a' : '#eee'}; display:flex; justify-content:space-between; align-items:center;">
+            <div style="display:flex; align-items:center; gap:10px;">
+              <label style="background:${hasPhoto ? '#2e7d32' : '#ff5722'}; color:#fff; padding:6px 12px; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:5px; box-shadow:0 1px 3px rgba(0,0,0,0.2);">
+                📷 ${hasPhoto ? 'Retake Photo' : 'Capture Photo'}
+                <input type="file" accept="image/*" capture="environment" onchange="window.handlePhotoUpload('${record.id}', ${idx}, this)" style="display:none;" />
+              </label>
+              ${hasPhoto ? `<span style="font-size:11px; color:#2e7d32; font-weight:bold;">✓ Photo Saved</span>` : `<span style="font-size:11px; color:#777;">Optional step photo</span>`}
             </div>
-          ` : ''}
+
+            ${hasPhoto ? `
+              <div style="display:flex; align-items:center; gap:8px;">
+                <img src="${tread.photos[0]}" style="height:48px; width:48px; object-fit:cover; border-radius:4px; border:1px solid #ccc; cursor:pointer;" onclick="window.open('${tread.photos[0]}', '_blank')" title="Click to view full image" />
+                <button type="button" onclick="window.removePhoto('${record.id}', ${idx})" style="background:#f44336; color:#fff; border:none; padding:4px 8px; border-radius:3px; font-size:10px; font-weight:bold; cursor:pointer;" title="Remove Photo">✕</button>
+              </div>
+            ` : ''}
+          </div>
         </div>
       `;
     });
@@ -305,10 +319,21 @@
       if (record) {
         record.treads[treadIdx].photos = [e.target.result];
         saveState();
+        renderStaircaseList();
         renderRightPanel();
       }
     };
     reader.readAsDataURL(input.files[0]);
+  };
+
+  window.removePhoto = function (recId, treadIdx) {
+    const record = records.find(r => r.id === recId);
+    if (record) {
+      record.treads[treadIdx].photos = [];
+      saveState();
+      renderStaircaseList();
+      renderRightPanel();
+    }
   };
 
   function init() {
