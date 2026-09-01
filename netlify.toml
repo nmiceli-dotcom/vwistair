@@ -1,11 +1,12 @@
 [build]
   publish = "."
+  functions = "netlify/functions"
 
-[functions]
-  directory = "netlify/functions"
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
 
-# The report generator embeds photos, which it pulls through the Image CDN as
-# downscaled JPEGs. Local site paths need no allowlisting.
 [[headers]]
   for = "/api/photo/*"
   [headers.values]
