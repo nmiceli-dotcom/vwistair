@@ -11,6 +11,27 @@
   let activeRecordId = records.find(r => r.propertyId === currentPropertyId)?.id || null;
   let editingRecordId = null;
 
+  // Escape values interpolated into HTML attributes / text.
+  function esc(v) {
+    return String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  // Re-rendering replaces innerHTML, which would drop keyboard focus to <body>.
+  // Elements carry a data-focus-key; focus is restored to the same key (or to a
+  // requested fallback key) after each render.
+  let pendingFocusKey = null;
+  function preserveFocus(render) {
+    const active = document.activeElement;
+    const key = pendingFocusKey || (active && active.getAttribute && active.getAttribute('data-focus-key'));
+    render();
+    if (!key) return;
+    const el = document.querySelector(`[data-focus-key="${CSS.escape(key)}"]`);
+    if (el) {
+      el.focus();
+      pendingFocusKey = null;
+    }
+  }
+
   function saveState() {
     localStorage.setItem(STORAGE_KEY_PROPERTIES, JSON.stringify(properties));
     localStorage.setItem(STORAGE_KEY_RECORDS, JSON.stringify(records));
@@ -276,7 +297,7 @@
             const csvBtn = document.createElement('button');
             csvBtn.id = 'exportCsvBtn';
             csvBtn.type = 'button';
-            csvBtn.textContent = '📊 Export CSV Data';
+            csvBtn.innerHTML = '<span aria-hidden="true">📊</span> Export CSV Data';
             csvBtn.style.cssText = 'background:#2e7d32; color:#fff; border:none; padding:10px 16px; border-radius:4px; font-size:13px; font-weight:bold; cursor:pointer; margin-left:10px; margin-top:5px;';
             csvBtn.onclick = (e) => {
               e.preventDefault();
@@ -291,11 +312,17 @@
   }
 
   function renderStaircaseList() {
+    preserveFocus(renderStaircaseListInner);
+  }
+
+  function renderStaircaseListInner() {
     let listContainer = document.querySelector('#loggedStaircasesList');
     if (!listContainer) {
       const sidebar = document.querySelectorAll('div')[1] || document.body;
       listContainer = document.createElement('div');
       listContainer.id = 'loggedStaircasesList';
+      listContainer.setAttribute('role', 'region');
+      listContainer.setAttribute('aria-label', 'Logged staircases');
       listContainer.style.cssText = 'margin-top:20px; padding:15px; background:#fff; color:#111; border:1px solid #ddd; border-radius:6px;';
 
       const formBtn = document.querySelectorAll('button, input[type="submit"]')[0];
@@ -309,31 +336,33 @@
     const propRecords = records.filter(r => r.propertyId === currentPropertyId);
 
     if (propRecords.length === 0) {
-      listContainer.innerHTML = '<strong style="display:block; margin-bottom:5px; font-size:12px; color:#555;">LOGGED STAIRCASES</strong><p style="font-size:12px; color:#888; margin:0;">No staircases logged for this property yet.</p>';
+      listContainer.innerHTML = '<strong style="display:block; margin-bottom:5px; font-size:12px; color:#555;">LOGGED STAIRCASES</strong><p style="font-size:12px; color:#595959; margin:0;">No staircases logged for this property yet.</p>';
       return;
     }
 
     listContainer.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-        <strong style="color:#ff5722; font-size:13px;">LOGGED STAIRCASES (${propRecords.length})</strong>
-        <button type="button" onclick="window.clearAllStaircases()" style="background:#e53935; color:#fff; border:none; padding:4px 8px; border-radius:3px; font-size:10px; font-weight:bold; cursor:pointer;">Clear All</button>
+        <strong style="color:#c2410c; font-size:13px;">LOGGED STAIRCASES (${propRecords.length})</strong>
+        <button type="button" data-focus-key="clear-all" onclick="window.clearAllStaircases()" aria-label="Clear all staircases for this property" style="background:#c62828; color:#fff; border:none; padding:4px 8px; border-radius:3px; font-size:10px; font-weight:bold; cursor:pointer;">Clear All</button>
       </div>
+      <ul style="list-style:none; margin:0; padding:0;">
       ${propRecords.map(r => {
         const flaggedCount = r.treads.filter(t => ['C', 'HSW'].includes(t.condition)).length;
         const photoCount = r.treads.filter(t => t.photos && t.photos.length > 0).length;
         const isSelected = r.id === activeRecordId;
         return `
-          <div class="stair-item" data-id="${r.id}" style="padding:10px; margin-bottom:8px; border:2px solid ${isSelected ? '#ff5722' : '#ccc'}; background:${isSelected ? '#fff3e0' : '#f9f9f9'}; color:#111; border-radius:4px; cursor:pointer;">
+          <li class="stair-item" data-id="${r.id}" style="padding:10px; margin-bottom:8px; border:2px solid ${isSelected ? '#ff5722' : '#ccc'}; background:${isSelected ? '#fff3e0' : '#f9f9f9'}; color:#111; border-radius:4px; cursor:pointer;">
             <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-              <div style="font-weight:bold; font-size:14px; color:#111; padding-right:10px;">Bldg ${r.building} — Unit/Stair ${r.unit}</div>
-              <button type="button" onclick="event.stopPropagation(); window.deleteStaircase('${r.id}')" title="Delete Staircase" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:3px; padding:2px 6px; font-size:11px; font-weight:bold; cursor:pointer;">✕ Delete</button>
+              <button type="button" class="stair-select" data-focus-key="select-${r.id}" aria-current="${isSelected ? 'true' : 'false'}" style="all:unset; cursor:pointer; font-weight:bold; font-size:14px; color:#111; padding-right:10px;">Bldg ${r.building} — Unit/Stair ${r.unit}</button>
+              <button type="button" data-focus-key="delete-${r.id}" onclick="event.stopPropagation(); window.deleteStaircase('${r.id}')" aria-label="Delete staircase Bldg ${esc(r.building)}, Unit/Stair ${esc(r.unit)}" style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; border-radius:3px; padding:2px 6px; font-size:11px; font-weight:bold; cursor:pointer;"><span aria-hidden="true">✕</span> Delete</button>
             </div>
             <div style="font-size:12px; color:#555; margin-top:4px;">
-              ${r.periodLabel} | ${r.treads.length} Steps | 📷 ${photoCount} Photos ${flaggedCount > 0 ? `<span style="color:#d32f2f; font-weight:bold;">| ⚠️ ${flaggedCount} Flagged</span>` : ''}
+              ${r.periodLabel} | ${r.treads.length} Steps | <span aria-hidden="true">📷</span> ${photoCount} Photos ${flaggedCount > 0 ? `<span style="color:#c62828; font-weight:bold;">| <span aria-hidden="true">⚠️</span> ${flaggedCount} Flagged</span>` : ''}
             </div>
-          </div>
+          </li>
         `;
       }).join('')}
+      </ul>
     `;
 
     listContainer.querySelectorAll('.stair-item').forEach(item => {
@@ -347,6 +376,10 @@
   }
 
   function renderRightPanel() {
+    preserveFocus(renderRightPanelInner);
+  }
+
+  function renderRightPanelInner() {
     let mainPanel = document.querySelector('.main-panel') || document.querySelectorAll('div')[2] || document.body;
 
     const headers = Array.from(document.querySelectorAll('h3, h4, div'));
@@ -360,9 +393,9 @@
     if (!record) {
       mainPanel.innerHTML = `
         <div style="padding:20px; background:#fff; color:#111; border:1px solid #ddd; border-radius:6px;">
-          <h4 style="margin-top:0; color:#111;">NO STAIRCASE SELECTED</h4>
+          <h2 tabindex="-1" data-focus-key="panel-heading" style="margin-top:0; color:#111; font-size:16px;">NO STAIRCASE SELECTED</h2>
           <p style="opacity:0.8; color:#333;">Pick a staircase from the left list, or fill in the form and click "Create staircase record".</p>
-          <div style="text-align:center; padding:30px; color:#666;">
+          <div style="text-align:center; padding:30px; color:#595959;">
             <p>Every tread is recorded, not just the damaged ones. Use the camera button on each step to attach photo evidence.</p>
           </div>
         </div>
@@ -376,54 +409,54 @@
       <div style="padding:20px; background:#fff; color:#111; border:1px solid #ddd; border-radius:6px;">
         <div style="margin-bottom:15px; padding-bottom:10px; border-bottom:2px solid #ff5722; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
           <div>
-            <h3 style="margin:0; font-size:18px; color:#111;">Building ${record.building} — Unit/Stairwell ${record.unit}</h3>
+            <h2 tabindex="-1" data-focus-key="panel-heading" style="margin:0; font-size:18px; color:#111;">Building ${record.building} — Unit/Stairwell ${record.unit}</h2>
             <p style="font-size:13px; color:#555; margin-top:4px;">Inspector: <strong style="color:#111;">${record.inspector}</strong> | Period: <strong style="color:#111;">${record.periodLabel}</strong> | Date: ${record.inspectedOn}</p>
           </div>
           <div style="display:flex; gap:8px;">
-            <button type="button" onclick="window.toggleEditStaircase('${record.id}')" style="background:${isEditingThis ? '#ff9800' : '#0288d1'}; color:#fff; border:none; padding:6px 12px; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;">
-              ${isEditingThis ? 'Close Edit' : '✏️ Edit Details'}
+            <button type="button" data-focus-key="edit-toggle" aria-expanded="${isEditingThis ? 'true' : 'false'}" aria-controls="edit_panel_${record.id}" onclick="window.toggleEditStaircase('${record.id}')" style="background:${isEditingThis ? '#b45309' : '#0277bd'}; color:#fff; border:none; padding:6px 12px; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;">
+              ${isEditingThis ? 'Close Edit' : '<span aria-hidden="true">✏️</span> Edit Details'}
             </button>
-            <button type="button" onclick="window.deleteStaircase('${record.id}')" style="background:#d32f2f; color:#fff; border:none; padding:6px 12px; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;">Delete</button>
+            <button type="button" data-focus-key="panel-delete" onclick="window.deleteStaircase('${record.id}')" aria-label="Delete staircase Building ${esc(record.building)}, Unit/Stairwell ${esc(record.unit)}" style="background:#d32f2f; color:#fff; border:none; padding:6px 12px; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;">Delete</button>
           </div>
         </div>
 
         ${isEditingThis ? `
-          <div style="background:#f0f7ff; padding:15px; border-radius:6px; border:1px solid #b3e5fc; margin-bottom:15px;">
-            <h4 style="margin:0 0 10px 0; color:#0277bd; font-size:14px;">✏️ EDIT STAIRCASE DETAILS</h4>
+          <div id="edit_panel_${record.id}" role="group" aria-labelledby="edit_heading_${record.id}" style="background:#f0f7ff; padding:15px; border-radius:6px; border:1px solid #b3e5fc; margin-bottom:15px;">
+            <h3 id="edit_heading_${record.id}" style="margin:0 0 10px 0; color:#01579b; font-size:14px;"><span aria-hidden="true">✏️</span> EDIT STAIRCASE DETAILS</h3>
             <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:10px; margin-bottom:12px;">
               <div>
-                <label style="font-size:11px; font-weight:bold; color:#333; display:block; margin-bottom:3px;">Building:</label>
-                <input type="text" id="edit_bldg_${record.id}" list="dl_buildings" value="${record.building}" style="width:100%; padding:6px; box-sizing:border-box; color:#111; border:1px solid #ccc; border-radius:4px;" />
+                <label for="edit_bldg_${record.id}" style="font-size:11px; font-weight:bold; color:#333; display:block; margin-bottom:3px;">Building:</label>
+                <input type="text" id="edit_bldg_${record.id}" data-focus-key="edit_bldg_${record.id}" list="dl_buildings" value="${record.building}" style="width:100%; padding:6px; box-sizing:border-box; color:#111; border:1px solid #ccc; border-radius:4px;" />
               </div>
               <div>
-                <label style="font-size:11px; font-weight:bold; color:#333; display:block; margin-bottom:3px;">Unit / Stairwell:</label>
+                <label for="edit_unit_${record.id}" style="font-size:11px; font-weight:bold; color:#333; display:block; margin-bottom:3px;">Unit / Stairwell:</label>
                 <input type="text" id="edit_unit_${record.id}" value="${record.unit}" style="width:100%; padding:6px; box-sizing:border-box; color:#111; border:1px solid #ccc; border-radius:4px;" />
               </div>
               <div>
-                <label style="font-size:11px; font-weight:bold; color:#333; display:block; margin-bottom:3px;">Period Label:</label>
+                <label for="edit_period_${record.id}" style="font-size:11px; font-weight:bold; color:#333; display:block; margin-bottom:3px;">Period Label:</label>
                 <input type="text" id="edit_period_${record.id}" list="dl_periods" value="${record.periodLabel}" style="width:100%; padding:6px; box-sizing:border-box; color:#111; border:1px solid #ccc; border-radius:4px;" />
               </div>
               <div>
-                <label style="font-size:11px; font-weight:bold; color:#333; display:block; margin-bottom:3px;">Inspected On:</label>
+                <label for="edit_date_${record.id}" style="font-size:11px; font-weight:bold; color:#333; display:block; margin-bottom:3px;">Inspected On:</label>
                 <input type="date" id="edit_date_${record.id}" value="${record.inspectedOn}" style="width:100%; padding:6px; box-sizing:border-box; color:#111; border:1px solid #ccc; border-radius:4px;" />
               </div>
               <div>
-                <label style="font-size:11px; font-weight:bold; color:#333; display:block; margin-bottom:3px;">Inspector:</label>
+                <label for="edit_inspector_${record.id}" style="font-size:11px; font-weight:bold; color:#333; display:block; margin-bottom:3px;">Inspector:</label>
                 <input type="text" id="edit_inspector_${record.id}" list="dl_inspectors" value="${record.inspector}" style="width:100%; padding:6px; box-sizing:border-box; color:#111; border:1px solid #ccc; border-radius:4px;" />
               </div>
               <div>
-                <label style="font-size:11px; font-weight:bold; color:#333; display:block; margin-bottom:3px;">Step Count:</label>
+                <label for="edit_steps_${record.id}" style="font-size:11px; font-weight:bold; color:#333; display:block; margin-bottom:3px;">Step Count:</label>
                 <input type="number" id="edit_steps_${record.id}" value="${record.stepCount || record.treads.length}" min="1" max="50" style="width:100%; padding:6px; box-sizing:border-box; color:#111; border:1px solid #ccc; border-radius:4px;" />
               </div>
             </div>
             <div style="display:flex; gap:8px;">
-              <button type="button" onclick="window.saveStaircaseEdit('${record.id}')" style="background:#2e7d32; color:#fff; border:none; padding:6px 14px; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;">✓ Save Changes</button>
+              <button type="button" data-focus-key="edit-save" onclick="window.saveStaircaseEdit('${record.id}')" style="background:#2e7d32; color:#fff; border:none; padding:6px 14px; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;"><span aria-hidden="true">✓</span> Save Changes</button>
               <button type="button" onclick="window.toggleEditStaircase('${record.id}')" style="background:#757575; color:#fff; border:none; padding:6px 14px; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;">Cancel</button>
             </div>
           </div>
         ` : ''}
 
-        <div class="tread-grid" style="display:flex; flex-direction:column; gap:10px;">
+        <ul class="tread-grid" aria-label="Treads" style="display:flex; flex-direction:column; gap:10px; list-style:none; margin:0; padding:0;">
     `;
 
     record.treads.forEach((tread, idx) => {
@@ -431,12 +464,14 @@
       const hasPhoto = tread.photos && tread.photos.length > 0;
 
       html += `
-        <div style="padding:12px; border:1px solid ${isFlagged ? '#e53935' : '#e0e0e0'}; background:${isFlagged ? '#ffebee' : '#ffffff'}; color:#111; border-radius:6px;">
+        <li style="padding:12px; border:1px solid ${isFlagged ? '#e53935' : '#e0e0e0'}; background:${isFlagged ? '#ffebee' : '#ffffff'}; color:#111; border-radius:6px;">
           <div style="display:flex; justify-content:space-between; align-items:center;">
-            <strong style="font-size:15px; color:#111; font-weight:800;">Step ${tread.step}</strong>
-            <div style="display:flex; gap:6px;">
+            <strong id="step_label_${record.id}_${idx}" style="font-size:15px; color:#111; font-weight:800;">Step ${tread.step}${isFlagged ? ' <span style="font-size:11px; color:#c62828;">(flagged)</span>' : ''}</strong>
+            <div role="group" aria-label="Step ${tread.step} condition" style="display:flex; gap:6px;">
               ${['PASS', 'C', 'N', 'MON', 'HSW'].map(code => `
-                <button type="button" 
+                <button type="button"
+                        data-focus-key="cond-${idx}-${code}"
+                        aria-pressed="${tread.condition === code ? 'true' : 'false'}"
                         onclick="window.updateTreadStatus('${record.id}', ${idx}, '${code}')"
                         style="padding:5px 10px; font-size:12px; border-radius:4px; border:1px solid #bbb; cursor:pointer; font-weight:bold; background:${tread.condition === code ? '#111' : '#fff'}; color:${tread.condition === code ? '#fff' : '#111'};">
                   ${code}
@@ -447,30 +482,33 @@
 
           <div style="margin-top:10px; padding-top:8px; border-top:1px dashed ${isFlagged ? '#ef9a9a' : '#eee'}; display:flex; justify-content:space-between; align-items:center;">
             <div style="display:flex; align-items:center; gap:10px;">
-              <label style="background:${hasPhoto ? '#2e7d32' : '#ff5722'}; color:#fff; padding:6px 12px; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:5px; box-shadow:0 1px 3px rgba(0,0,0,0.2);">
-                📷 ${hasPhoto ? 'Retake Photo' : 'Capture Photo'}
-                <input type="file" accept="image/*" capture="environment" onchange="window.handlePhotoUpload('${record.id}', ${idx}, this)" style="display:none;" />
+              <label class="photo-capture" style="background:${hasPhoto ? '#2e7d32' : '#c2410c'}; color:#fff; padding:6px 12px; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:5px; box-shadow:0 1px 3px rgba(0,0,0,0.2);">
+                <span aria-hidden="true">📷</span> ${hasPhoto ? 'Retake Photo' : 'Capture Photo'}
+                <input type="file" class="visually-hidden" data-focus-key="photo-${idx}" aria-label="${hasPhoto ? 'Retake' : 'Capture'} photo for step ${tread.step}" accept="image/*" capture="environment" onchange="window.handlePhotoUpload('${record.id}', ${idx}, this)" />
               </label>
-              ${hasPhoto ? `<span style="font-size:11px; color:#2e7d32; font-weight:bold;">✓ Photo Saved</span>` : `<span style="font-size:11px; color:#777;">Optional step photo</span>`}
+              ${hasPhoto ? `<span style="font-size:11px; color:#2e7d32; font-weight:bold;"><span aria-hidden="true">✓</span> Photo Saved</span>` : `<span style="font-size:11px; color:#595959;">Optional step photo</span>`}
             </div>
 
             ${hasPhoto ? `
               <div style="display:flex; align-items:center; gap:8px;">
-                <img src="${tread.photos[0]}" style="height:48px; width:48px; object-fit:cover; border-radius:4px; border:1px solid #ccc; cursor:pointer;" onclick="window.open('${tread.photos[0]}', '_blank')" title="Click to view full image" />
-                <button type="button" onclick="window.removePhoto('${record.id}', ${idx})" style="background:#f44336; color:#fff; border:none; padding:4px 8px; border-radius:3px; font-size:10px; font-weight:bold; cursor:pointer;" title="Remove Photo">✕</button>
+                <button type="button" onclick="window.open('${tread.photos[0]}', '_blank')" aria-label="View full photo of step ${tread.step}" title="View full image" style="padding:0; border:0; background:none; cursor:pointer; line-height:0;">
+                  <img src="${tread.photos[0]}" alt="Photo of step ${tread.step}" style="height:48px; width:48px; object-fit:cover; border-radius:4px; border:1px solid #ccc;" />
+                </button>
+                <button type="button" onclick="window.removePhoto('${record.id}', ${idx})" aria-label="Remove photo for step ${tread.step}" style="background:#c62828; color:#fff; border:none; padding:4px 8px; border-radius:3px; font-size:10px; font-weight:bold; cursor:pointer;" title="Remove Photo"><span aria-hidden="true">✕</span></button>
               </div>
             ` : ''}
           </div>
-        </div>
+        </li>
       `;
     });
 
-    html += `</div></div>`;
+    html += `</ul></div>`;
     mainPanel.innerHTML = html;
   }
 
   window.toggleEditStaircase = function (recId) {
     editingRecordId = editingRecordId === recId ? null : recId;
+    pendingFocusKey = editingRecordId ? `edit_bldg_${recId}` : 'edit-toggle';
     renderRightPanel();
   };
 
@@ -506,6 +544,7 @@
     }
 
     editingRecordId = null;
+    pendingFocusKey = 'edit-toggle';
     saveState();
     renderStaircaseList();
     renderRightPanel();
@@ -519,6 +558,7 @@
         activeRecordId = remaining.length ? remaining[0].id : null;
       }
       if (editingRecordId === recId) editingRecordId = null;
+      pendingFocusKey = 'panel-heading';
       saveState();
       renderStaircaseList();
       renderRightPanel();
@@ -530,6 +570,7 @@
       records = records.filter(r => r.propertyId !== currentPropertyId);
       activeRecordId = null;
       editingRecordId = null;
+      pendingFocusKey = 'panel-heading';
       saveState();
       renderStaircaseList();
       renderRightPanel();
@@ -563,6 +604,7 @@
     const record = records.find(r => r.id === recId);
     if (record) {
       record.treads[treadIdx].photos = [];
+      pendingFocusKey = `photo-${treadIdx}`;
       saveState();
       renderStaircaseList();
       renderRightPanel();
